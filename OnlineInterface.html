@@ -1,0 +1,143 @@
+<html>
+<head>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <script type="text/javascript">
+        // an asynchrone get request
+        function httpGetAsync(theUrl, callback)
+        {
+            var xmlHttp = new XMLHttpRequest();
+            xmlHttp.onreadystatechange = function() { 
+                if (xmlHttp.readyState == 4 && xmlHttp.status == 200)
+                    callback(xmlHttp.responseText);
+            }
+            xmlHttp.open("GET", theUrl, true); // true for asynchronous 
+            xmlHttp.send(null);
+        }
+        // get data from csv on server
+        allRows = [];
+        httpGetAsync('http://localhost:8080/sensordata.csv', csvDataLoaded);
+
+        function csvDataLoaded(data) {
+            allRows = data.split(/\r?\n|\r/);
+            // use the header as title for chart (first row of array)
+            csvData = [];
+            csvData.push(allRows[0].split(';'));
+            // one row in the csv contains: datetime;humidity;temperature
+            for (var row = 1; row < allRows.length; row++) {
+                var splitRow = allRows[row].split(';')
+                // date in csv is in seconds since 1.1.1970
+                date = new Date(parseInt(splitRow[0]) * 1000);
+                // only display data from the last 24 hours
+                if ((Date.now() - date.getTime()) > (24 * 60 * 60 * 1000)) { continue; } 
+                csvData.push(
+                    [date, parseFloat(splitRow[1]) / 100.0, parseFloat(splitRow[2])]
+                );
+            }
+        }
+
+        google.charts.load('current', { 'packages': ['corechart'] });
+        google.charts.setOnLoadCallback(drawChart);
+        
+        function drawChart() {
+            // divide humidity and temperature in separate data structures since there will be one chart for each
+            var HumidityData = [];
+            for (var row = 0; row < csvData.length; row++) {
+                HumidityData.push(
+                    [csvData[row][0], csvData[row][1]]
+                );
+            }
+            var TemperatureData = [];
+            for (var row = 0; row < csvData.length; row++) {
+                TemperatureData.push(
+                    [csvData[row][0], csvData[row][2]]
+                );
+            }
+            var data = google.visualization.arrayToDataTable(HumidityData);
+
+            var options = {
+                title: 'Humidity',
+                curveType: 'function',
+                legend: 'none',
+                vAxis: {format: 'percent'}
+            };
+            var chart = new google.visualization.LineChart(document.getElementById('humid_chart'));
+            chart.draw(data, options);
+
+            options['title'] = 'Temperature';
+            options['colors'] = ['red'];
+            options['vAxis'] = {format: '##.## \u00B0C'};
+            data = google.visualization.arrayToDataTable(TemperatureData);
+            var chart = new google.visualization.LineChart(document.getElementById('temp_chart'));
+            chart.draw(data, options);
+            //display the latest measurement separately
+            lastDate = csvData[csvData.length-1][0];
+            lastDateString = "<i>" +
+                lastDate.getDate().toString() + '.' +
+                lastDate.getMonth().toString() + '.' +
+                lastDate.getFullYear().toString() + ' ' +
+                lastDate.getHours().toString() + ':' +
+                lastDate.getMinutes().toString() +
+                "</i>";
+
+            document.getElementById('measure_cell').innerHTML = lastDateString + ' - ' + 
+                parseFloat(csvData[csvData.length-1][1] * 100.0).toString() + '% - ' +
+                csvData[csvData.length-1][2] + ' \u00B0C';
+        } //drawChart
+        //get current threshold value and set it as a placeholder for the input field
+        httpGetAsync('http://localhost:8080/threshold.cfg', thresholdLoaded);
+        function thresholdLoaded(data) {
+            document.getElementById('i_threshold').placeholder = data;
+        }
+    </script>
+</head>
+
+<body>
+    <div class="jumbotron">
+        <h1 class="display-4">Georg's Project</h1>
+        <p class="lead">Controlling sockets over the web.</p>
+        
+        
+        <table style="width: 100%; height: 70%; margin: 40px">
+            <tr>
+            <td style="width: 50%; height: 100%"><div id="humid_chart" style="width: 100%; height: 100%"></div></td>
+            <td style="width: 50%; height: 100%;padding-right: 60px;"><div id="temp_chart" style="width: 100%; height: 100%"></div></div></td>
+        </tr>
+        <tr><td style="padding-left: 60px"><b>Last measurement</b></td></tr>
+        <tr><td id="measure_cell" style="padding-left: 60px"></td></tr>
+        <tr><td><br></td></tr>
+        <tr><td style="padding-left: 60px">
+            <form>
+                <b>Enter humidity threshold</b><br>
+                <input id="i_threshold" type="text" name="threshold">
+                <input type="submit" value="Submit">
+            </form>
+        </td>
+        </tr>
+        <tr><td style="padding-left: 60px">
+            <b>Switch manually</b>
+            <table>
+                <tr>
+                    <td>
+                <form>
+                    <input type="hidden" name="on" value="1">
+                    <input type="submit" value="On">
+                </form>
+            </td>
+            <td>
+                <form>
+                    <input type="hidden" name="off" value="1">
+                    <input type="submit" value="Off">
+                </form>
+            </td>
+        </tr>
+    </table>
+        </td>
+    </tr>
+</table>
+</div>
+</body>
+</html>
